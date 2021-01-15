@@ -12,7 +12,7 @@ The API borrows strongly from the existing [PriorityQueue](https://github.com/zi
 * Run on my old 12" Macbook (2017)
 * I would expect that on faster hardware the min-max heap will outperform by a larger amount, as the CPU is able to parallelise it more at the instruction-level.
 
-See `bench_minmax.zig` and `bench_std.zig` for the code. These were compiled and run many times using (Hyperfine)[https://github.com/sharkdp/hyperfine].
+See `bench_minmax.zig` and `bench_std.zig` for the code. These were compiled and run many times using [Hyperfine](https://github.com/sharkdp/hyperfine).
 
 ### Making a Heap from an array
 
@@ -60,3 +60,10 @@ u8 | 10,000,000 | 2.18s | 2.87s | 32% faster
 u64 | 1,000,000 | 361ms | 360ms | -
 u64 | 10,000,000 | 5.95s | 5.71s | 4% slower
 
+## License
+
+Copyright (c) 2021 zanderxyz
+
+The source is released under the MIT License.
+
+Check [LICENSE](https://github.com/zanderxyz/zig-min-max-heap/blob/master/LICENSE) for more information.
