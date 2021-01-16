@@ -12,8 +12,8 @@ The API borrows strongly from the existing [PriorityQueue](https://github.com/zi
 * Use an input of N items randomly chosen from the given type (i.e. a random u8 would be >= 0 and < 256). 
 * Run on 15 January 2021 using Zig 0.7.1 
 * Run on my old 12" Macbook (2017)
-* Clearly all these numbers are very rough approximates
-* I would expect that on faster hardware the min-max heap will outperform by a larger amount, as the CPU is able to parallelise it more at the instruction-level.
+* Clearly all these numbers are very rough approximations (removing min and max items from the binary heap should in theory be identical), but the performance differences seem consistent even if the exact times are not precise
+* I would expect that on better hardware the min-max heap will outperform by a larger amount, as the CPU is able to parallelise it more at the instruction-level.
 
 See `bench_minmax.zig` and `bench_std.zig` for the code. These were compiled and run many times using [Hyperfine](https://github.com/sharkdp/hyperfine).
 
@@ -30,7 +30,7 @@ u64 | 10,000,000 | 300ms | 360ms | 20% faster
 
 ### Adding items one by one
 
-This should be O(n log n).
+This should be O(n log n)
 
 Type | Number of items | Min-Max | Binary | Comparison
 --- | --- | --- | --- | ---
