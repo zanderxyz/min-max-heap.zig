@@ -1,6 +1,6 @@
 # A Min-Max Heap for Zig
 
-![Tests](https://github.com/zanderxyz/zig-min-max-heap/workflows/Build%20and%20Test/badge.svg)
+![Tests](https://github.com/zanderxyz/min-max-heap.zig/workflows/Build%20and%20Test/badge.svg)
 
 This is my implementation of a [min-max heap](https://en.wikipedia.org/wiki/Min-max_heap) data structure in Zig. 
 
@@ -69,4 +69,4 @@ Copyright (c) 2021 zanderxyz
 
 The source is released under the MIT License.
 
-Check [LICENSE](https://github.com/zanderxyz/zig-min-max-heap/blob/master/LICENSE) for more information.
+Check [LICENSE](https://github.com/zanderxyz/min-max-heap.zig/blob/master/LICENSE) for more information.
