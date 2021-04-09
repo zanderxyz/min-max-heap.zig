@@ -1,14 +1,14 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const sort = std.sort;
 const assert = std.debug.assert;
 const warn = std.debug.warn;
+const Order = std.math.Order;
 const testing = std.testing;
 const expect = testing.expect;
 const expectEqual = testing.expectEqual;
 const expectError = testing.expectError;
 
-/// Min-max heap for storing generic data. Initialize with `init`.
+/// Min-Max Heap for storing generic data. Initialize with `init`.
 pub fn MinMaxHeap(comptime T: type) type {
     return struct {
         const Self = @This();
@@ -16,32 +16,27 @@ pub fn MinMaxHeap(comptime T: type) type {
         items: []T,
         len: usize,
         allocator: *Allocator,
-        lessThanFn: fn (a: T, b: T) bool,
+        compareFn: fn (a: T, b: T) Order,
 
-        /// Initialize and return a new heap. Provide `lessThanFn`
-        /// that returns `true` when its first argument should
-        /// get min-popped before its second argument. For example,
-        /// to make `popMin` return the minimum value, provide
+        /// Initialize and return a new priority deheap. Provide `compareFn`
+        /// that returns `Order.lt` when its first argument should
+        /// get min-popped before its second argument, `Order.eq` if the
+        /// arguments are of equal priority, or `Order.gt` if the second
+        /// argument should be min-popped first. Popping the max element works
+        /// in reverse. For example, to make `popMin` return the smallest
+        /// number, provide
         ///
-        /// `fn lessThanFn(a: T, b: T) bool { return a < b; }`
-        pub fn init(allocator: *Allocator, lessThanFn: fn (T, T) bool) Self {
+        /// `fn lessThan(a: T, b: T) Order { return std.math.order(a, b); }`
+        pub fn init(allocator: *Allocator, compareFn: fn (T, T) Order) Self {
             return Self{
                 .items = &[_]T{},
                 .len = 0,
                 .allocator = allocator,
-                .lessThanFn = lessThanFn,
+                .compareFn = compareFn,
             };
         }
 
-        fn lessThan(self: Self, a: T, b: T) bool {
-            return self.lessThanFn(a, b);
-        }
-
-        fn greaterThan(self: Self, a: T, b: T) bool {
-            return self.lessThanFn(b, a);
-        }
-
-        /// Free memory used by the heap.
+        /// Free memory used by the deheap.
         pub fn deinit(self: Self) void {
             self.allocator.free(self.items);
         }
@@ -52,7 +47,7 @@ pub fn MinMaxHeap(comptime T: type) type {
             addUnchecked(self, elem);
         }
 
-        /// Add each element in `items` to the heap.
+        /// Add each element in `items` to the deheap.
         pub fn addSlice(self: *Self, items: []const T) !void {
             try self.ensureCapacity(self.len + items.len);
             for (items) |e| {
@@ -77,7 +72,7 @@ pub fn MinMaxHeap(comptime T: type) type {
             // next two are on a max layer;
             // next four are on a min layer, and so on.
             const leading_zeros = @clz(usize, index + 1);
-            const highest_set_bit = 63 - leading_zeros;
+            const highest_set_bit = @bitSizeOf(usize) - 1 - leading_zeros;
             return (highest_set_bit & 1) == 0;
         }
 
@@ -96,7 +91,8 @@ pub fn MinMaxHeap(comptime T: type) type {
             const parent = self.items[parent_index];
 
             const min_layer = self.nextIsMinLayer();
-            if ((min_layer and self.greaterThan(child, parent)) or (!min_layer and self.lessThan(child, parent))) {
+            const order = self.compareFn(child, parent);
+            if ((min_layer and order == .gt) or (!min_layer and order == .lt)) {
                 // We must swap the item with it's parent if it is on the "wrong" layer
                 self.items[parent_index] = child;
                 self.items[child_index] = parent;
@@ -114,21 +110,21 @@ pub fn MinMaxHeap(comptime T: type) type {
 
         fn siftUp(self: *Self, start: StartIndexAndLayer) void {
             if (start.min_layer) {
-                doSiftUp(self, start.index, lessThan);
+                doSiftUp(self, start.index, .lt);
             } else {
-                doSiftUp(self, start.index, greaterThan);
+                doSiftUp(self, start.index, .gt);
             }
         }
 
-        fn doSiftUp(self: *Self, start_index: usize, compare: fn (Self, T, T) bool) void {
+        fn doSiftUp(self: *Self, start_index: usize, target_order: Order) void {
             var child_index = start_index;
             while (child_index > 2) {
                 var grandparent_index = grandparentIndex(child_index);
                 const child = self.items[child_index];
                 const grandparent = self.items[grandparent_index];
 
-                // If the grandparent is already better, we have gone as far as we need to
-                if (!compare(self.*, child, grandparent)) break;
+                // If the grandparent is already better or equal, we have gone as far as we need to
+                if (self.compareFn(child, grandparent) != target_order) break;
 
                 // Otherwise swap the item with it's grandparent
                 self.items[grandparent_index] = child;
@@ -137,48 +133,48 @@ pub fn MinMaxHeap(comptime T: type) type {
             }
         }
 
-        /// Look at the smallest element in the heap. Returns
+        /// Look at the smallest element in the deheap. Returns
         /// `null` if empty.
         pub fn peekMin(self: *Self) ?T {
             return if (self.len > 0) self.items[0] else null;
         }
 
-        /// Look at the largest element in the heap. Returns
+        /// Look at the largest element in the deheap. Returns
         /// `null` if empty.
         pub fn peekMax(self: *Self) ?T {
             if (self.len == 0) return null;
             if (self.len == 1) return self.items[0];
             if (self.len == 2) return self.items[1];
-            return self.bestItemAtIndices(1, 2, greaterThan).item;
+            return self.bestItemAtIndices(1, 2, .gt).item;
         }
 
         fn maxIndex(self: Self) ?usize {
             if (self.len == 0) return null;
             if (self.len == 1) return 0;
             if (self.len == 2) return 1;
-            return self.bestItemAtIndices(1, 2, greaterThan).index;
+            return self.bestItemAtIndices(1, 2, .gt).index;
         }
 
-        /// Pop the smallest element from the heap. Returns
+        /// Pop the smallest element from the deheap. Returns
         /// `null` if empty.
         pub fn removeMinOrNull(self: *Self) ?T {
             return if (self.len > 0) self.removeMin() else null;
         }
 
         /// Remove and return the smallest element from the
-        /// heap.
+        /// deheap.
         pub fn removeMin(self: *Self) T {
             return self.removeIndex(0);
         }
 
-        /// Pop the largest element from the heap. Returns
+        /// Pop the largest element from the deheap. Returns
         /// `null` if empty.
         pub fn removeMaxOrNull(self: *Self) ?T {
             return if (self.len > 0) self.removeMax() else null;
         }
 
         /// Remove and return the largest element from the
-        /// heap.
+        /// deheap.
         pub fn removeMax(self: *Self) T {
             return self.removeIndex(self.maxIndex().?);
         }
@@ -187,6 +183,7 @@ pub fn MinMaxHeap(comptime T: type) type {
         /// same order as iterator, which is not necessarily priority
         /// order.
         pub fn removeIndex(self: *Self, index: usize) T {
+            assert(self.len > index);
             const item = self.items[index];
             const last = self.items[self.len - 1];
 
@@ -199,13 +196,13 @@ pub fn MinMaxHeap(comptime T: type) type {
 
         fn siftDown(self: *Self, index: usize) void {
             if (isMinLayer(index)) {
-                self.doSiftDown(index, lessThan);
+                self.doSiftDown(index, .lt);
             } else {
-                self.doSiftDown(index, greaterThan);
+                self.doSiftDown(index, .gt);
             }
         }
 
-        fn doSiftDown(self: *Self, start_index: usize, compare: fn (Self, T, T) bool) void {
+        fn doSiftDown(self: *Self, start_index: usize, target_order: Order) void {
             var index = start_index;
             const half = self.len >> 1;
             while (true) {
@@ -220,12 +217,12 @@ pub fn MinMaxHeap(comptime T: type) type {
                     const index3 = index2 + 1;
 
                     // Find the best grandchild
-                    const best_left = self.bestItemAtIndices(first_grandchild_index, index2, compare);
-                    const best_right = self.bestItemAtIndices(index3, last_grandchild_index, compare);
-                    const best_grandchild = self.bestItem(best_left, best_right, compare);
+                    const best_left = self.bestItemAtIndices(first_grandchild_index, index2, target_order);
+                    const best_right = self.bestItemAtIndices(index3, last_grandchild_index, target_order);
+                    const best_grandchild = self.bestItem(best_left, best_right, target_order);
 
-                    // If the item is better than it's best grandchild, we are done
-                    if (compare(self.*, elem, best_grandchild.item) or elem == best_grandchild.item) return;
+                    // If the item is better than or equal to its best grandchild, we are done
+                    if (self.compareFn(best_grandchild.item, elem) != target_order) return;
 
                     // Otherwise, swap them
                     self.items[best_grandchild.index] = elem;
@@ -233,16 +230,16 @@ pub fn MinMaxHeap(comptime T: type) type {
                     index = best_grandchild.index;
 
                     // We might need to swap the element with it's parent
-                    self.swapIfParentIsBetter(elem, index, compare);
+                    self.swapIfParentIsBetter(elem, index, target_order);
                 } else {
                     // The children or grandchildren are the last layer
                     const first_child_index = firstChildIndex(index);
                     if (first_child_index > self.len) return;
 
-                    const best_descendent = self.bestDescendent(first_child_index, first_grandchild_index, compare);
+                    const best_descendent = self.bestDescendent(first_child_index, first_grandchild_index, target_order);
 
-                    // If the best descendant is still larger, we are done
-                    if (compare(self.*, elem, best_descendent.item) or elem == best_descendent.item) return;
+                    // If the item is better than or equal to its best descendant, we are done
+                    if (self.compareFn(best_descendent.item, elem) != target_order) return;
 
                     // Otherwise swap them
                     self.items[best_descendent.index] = elem;
@@ -253,7 +250,7 @@ pub fn MinMaxHeap(comptime T: type) type {
                     if (index < first_grandchild_index) return;
 
                     // We might need to swap the element with it's parent
-                    self.swapIfParentIsBetter(elem, index, compare);
+                    self.swapIfParentIsBetter(elem, index, target_order);
                     return;
                 }
 
@@ -262,11 +259,11 @@ pub fn MinMaxHeap(comptime T: type) type {
             }
         }
 
-        fn swapIfParentIsBetter(self: *Self, child: T, child_index: usize, compare: fn (Self, T, T) bool) void {
+        fn swapIfParentIsBetter(self: *Self, child: T, child_index: usize, target_order: Order) void {
             const parent_index = parentIndex(child_index);
             const parent = self.items[parent_index];
 
-            if (compare(self.*, parent, child)) {
+            if (self.compareFn(parent, child) == target_order) {
                 self.items[parent_index] = child;
                 self.items[child_index] = parent;
             }
@@ -284,21 +281,21 @@ pub fn MinMaxHeap(comptime T: type) type {
             };
         }
 
-        fn bestItem(self: Self, item1: ItemAndIndex, item2: ItemAndIndex, compare: fn (Self, T, T) bool) ItemAndIndex {
-            if (compare(self, item1.item, item2.item)) {
+        fn bestItem(self: Self, item1: ItemAndIndex, item2: ItemAndIndex, target_order: Order) ItemAndIndex {
+            if (self.compareFn(item1.item, item2.item) == target_order) {
                 return item1;
             } else {
                 return item2;
             }
         }
 
-        fn bestItemAtIndices(self: Self, index1: usize, index2: usize, compare: fn (Self, T, T) bool) ItemAndIndex {
+        fn bestItemAtIndices(self: Self, index1: usize, index2: usize, target_order: Order) ItemAndIndex {
             var item1 = self.getItem(index1);
             var item2 = self.getItem(index2);
-            return self.bestItem(item1, item2, compare);
+            return self.bestItem(item1, item2, target_order);
         }
 
-        fn bestDescendent(self: Self, first_child_index: usize, first_grandchild_index: usize, compare: fn (Self, T, T) bool) ItemAndIndex {
+        fn bestDescendent(self: Self, first_child_index: usize, first_grandchild_index: usize, target_order: Order) ItemAndIndex {
             const second_child_index = first_child_index + 1;
             if (first_grandchild_index >= self.len) {
                 // No grandchildren, find the best child (second may not exist)
@@ -308,48 +305,51 @@ pub fn MinMaxHeap(comptime T: type) type {
                         .index = first_child_index,
                     };
                 } else {
-                    return self.bestItemAtIndices(first_child_index, second_child_index, compare);
+                    return self.bestItemAtIndices(first_child_index, second_child_index, target_order);
                 }
             }
 
             const second_grandchild_index = first_grandchild_index + 1;
             if (second_grandchild_index >= self.len) {
                 // One grandchild, so we know there is a second child. Compare first grandchild and second child
-                return self.bestItemAtIndices(first_grandchild_index, second_child_index, compare);
+                return self.bestItemAtIndices(first_grandchild_index, second_child_index, target_order);
             }
 
-            const best_left_grandchild_index = self.bestItemAtIndices(first_grandchild_index, second_grandchild_index, compare).index;
+            const best_left_grandchild_index = self.bestItemAtIndices(first_grandchild_index, second_grandchild_index, target_order).index;
             const third_grandchild_index = second_grandchild_index + 1;
             if (third_grandchild_index >= self.len) {
                 // Two grandchildren, and we know the best. Compare this to second child.
-                return self.bestItemAtIndices(best_left_grandchild_index, second_child_index, compare);
+                return self.bestItemAtIndices(best_left_grandchild_index, second_child_index, target_order);
             } else {
                 // Three grandchildren, compare the min of the first two with the third
-                return self.bestItemAtIndices(best_left_grandchild_index, third_grandchild_index, compare);
+                return self.bestItemAtIndices(best_left_grandchild_index, third_grandchild_index, target_order);
             }
         }
 
-        /// Return the number of elements remaining in the heap
+        /// Return the number of elements remaining in the deheap
         pub fn count(self: Self) usize {
             return self.len;
         }
 
         /// Return the number of elements that can be added to the
-        /// heap before more memory is allocated.
+        /// deheap before more memory is allocated.
         pub fn capacity(self: Self) usize {
             return self.items.len;
         }
 
-        /// Heap takes ownership of the passed in slice. The slice must have been
+        /// Deheap takes ownership of the passed in slice. The slice must have been
         /// allocated with `allocator`.
         /// De-initialize with `deinit`.
-        pub fn fromOwnedSlice(allocator: *Allocator, lessThanFn: fn (T, T) bool, items: []T) Self {
+        pub fn fromOwnedSlice(allocator: *Allocator, compareFn: fn (T, T) Order, items: []T) Self {
             var heap = Self{
                 .items = items,
                 .len = items.len,
                 .allocator = allocator,
-                .lessThanFn = lessThanFn,
+                .compareFn = compareFn,
             };
+
+            if (heap.len <= 1) return heap;
+
             const half = (heap.len >> 1) - 1;
             var i: usize = 0;
             while (i <= half) : (i += 1) {
@@ -369,19 +369,34 @@ pub fn MinMaxHeap(comptime T: type) type {
             self.items = try self.allocator.realloc(self.items, better_capacity);
         }
 
-        pub fn resize(self: *Self, new_len: usize) !void {
-            try self.ensureCapacity(new_len);
+        /// Reduce allocated capacity to `new_len`.
+        pub fn shrinkAndFree(self: *Self, new_len: usize) void {
+            assert(new_len <= self.items.len);
+
+            // Cannot shrink to smaller than the current heap size without invalidating the heap property
+            assert(new_len >= self.len);
+
+            self.items = self.allocator.realloc(self.items[0..], new_len) catch |e| switch (e) {
+                error.OutOfMemory => { // no problem, capacity is still correct then.
+                    self.items.len = new_len;
+                    return;
+                },
+            };
             self.len = new_len;
         }
 
-        pub fn shrink(self: *Self, new_len: usize) void {
-            // TODO take advantage of the new realloc semantics
-            assert(new_len <= self.len);
+        /// Reduce length to `new_len`.
+        pub fn shrinkRetainingCapacity(self: *Self, new_len: usize) void {
+            assert(new_len <= self.items.len);
+
+            // Cannot shrink to smaller than the current heap size without invalidating the heap property
+            assert(new_len >= self.len);
+
             self.len = new_len;
         }
 
         pub fn update(self: *Self, elem: T, new_elem: T) !void {
-            var old_index: usize = std.mem.indexOfScalar(T, self.items, elem) orelse return error.ElementNotFound;
+            var old_index: usize = std.mem.indexOfScalar(T, self.items[0..self.len], elem) orelse return error.ElementNotFound;
             _ = self.removeIndex(old_index);
             self.addUnchecked(new_elem);
         }
@@ -445,8 +460,8 @@ pub fn MinMaxHeap(comptime T: type) type {
     };
 }
 
-fn lessThanComparison(a: u32, b: u32) bool {
-    return a < b;
+fn lessThanComparison(a: u32, b: u32) Order {
+    return std.math.order(a, b);
 }
 
 const Heap = MinMaxHeap(u32);
@@ -468,6 +483,32 @@ test "MinMaxHeap: add and remove min" {
     expectEqual(@as(u32, 23), heap.removeMin());
     expectEqual(@as(u32, 25), heap.removeMin());
     expectEqual(@as(u32, 54), heap.removeMin());
+}
+
+test "MinMaxHeap: add and remove min structs" {
+    const S = struct {
+        size: u32,
+    };
+    var heap = MinMaxHeap(S).init(testing.allocator, struct {
+        fn order(a: S, b: S) Order {
+            return std.math.order(a.size, b.size);
+        }
+    }.order);
+    defer heap.deinit();
+
+    try heap.add(.{ .size = 54 });
+    try heap.add(.{ .size = 12 });
+    try heap.add(.{ .size = 7 });
+    try heap.add(.{ .size = 23 });
+    try heap.add(.{ .size = 25 });
+    try heap.add(.{ .size = 13 });
+
+    expectEqual(@as(u32, 7), heap.removeMin().size);
+    expectEqual(@as(u32, 12), heap.removeMin().size);
+    expectEqual(@as(u32, 13), heap.removeMin().size);
+    expectEqual(@as(u32, 23), heap.removeMin().size);
+    expectEqual(@as(u32, 25), heap.removeMin().size);
+    expectEqual(@as(u32, 54), heap.removeMin().size);
 }
 
 test "MinMaxHeap: add and remove max" {
@@ -641,6 +682,26 @@ test "MinMaxHeap: addSlice max" {
     }
 }
 
+test "MinMaxHeap: fromOwnedSlice trivial case 0" {
+    const items = [0]u32{};
+    const heap_items = try testing.allocator.dupe(u32, &items);
+    var heap = Heap.fromOwnedSlice(testing.allocator, lessThanComparison, heap_items[0..]);
+    defer heap.deinit();
+    expectEqual(@as(usize, 0), heap.len);
+    expect(heap.removeMinOrNull() == null);
+}
+
+test "MinMaxHeap: fromOwnedSlice trivial case 1" {
+    const items = [1]u32{1};
+    const heap_items = try testing.allocator.dupe(u32, &items);
+    var heap = Heap.fromOwnedSlice(testing.allocator, lessThanComparison, heap_items[0..]);
+    defer heap.deinit();
+
+    expectEqual(@as(usize, 1), heap.len);
+    expectEqual(items[0], heap.removeMin());
+    expect(heap.removeMinOrNull() == null);
+}
+
 test "MinMaxHeap: fromOwnedSlice" {
     const items = [_]u32{ 15, 7, 21, 14, 13, 22, 12, 6, 7, 25, 5, 24, 11, 16, 15, 24, 2, 1 };
     const heap_items = try testing.allocator.dupe(u32, items[0..]);
@@ -768,6 +829,33 @@ test "MinMaxHeap: iterator while empty" {
     var it = heap.iterator();
 
     expectEqual(it.next(), null);
+}
+
+test "MinMaxHeap: shrinkRetainingCapacity and shrinkAndFree" {
+    var heap = Heap.init(testing.allocator, lessThanComparison);
+    defer heap.deinit();
+
+    try heap.ensureCapacity(4);
+    expect(heap.capacity() >= 4);
+
+    try heap.add(1);
+    try heap.add(2);
+    try heap.add(3);
+    expect(heap.capacity() >= 4);
+    expectEqual(@as(usize, 3), heap.len);
+
+    heap.shrinkRetainingCapacity(3);
+    expect(heap.capacity() >= 4);
+    expectEqual(@as(usize, 3), heap.len);
+
+    heap.shrinkAndFree(3);
+    expectEqual(@as(usize, 3), heap.capacity());
+    expectEqual(@as(usize, 3), heap.len);
+
+    expectEqual(@as(u32, 3), heap.removeMax());
+    expectEqual(@as(u32, 2), heap.removeMax());
+    expectEqual(@as(u32, 1), heap.removeMax());
+    expect(heap.removeMaxOrNull() == null);
 }
 
 test "MinMaxHeap: fuzz testing min" {

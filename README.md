@@ -6,6 +6,8 @@ This is my implementation of a [min-max heap](https://en.wikipedia.org/wiki/Min-
 
 The API borrows strongly from the existing [PriorityQueue](https://github.com/ziglang/zig/blob/master/lib/std/priority_queue.zig) in the Zig standard library, and despite the fact that the min-max heap offers O(log n) access to both ends of the structure, it outperforms the Priority Queue (implemented as a binary heap) in many cases.
 
+This has been [merged](https://github.com/ziglang/zig/commit/d780848ae404884b2f4c5d863dab980cb153cd8b) into the Zig standard library.
+
 ## Benchmarks
 
 * Compiled with ReleaseSafe mode
